@@ -1,6 +1,6 @@
 import { SignalBinding, pubsub } from './pubsub.js'
 
-export type ReactiveRecord<K extends keyof any, V> = Record<K, V> & SignalBinding<K>
+export type ReactiveRecord<T extends Record<any, any>> = T & SignalBinding<keyof T>
 
 /**
  * Creates a reactive `Record` that emits signals whenever its properties change.
@@ -17,13 +17,13 @@ export type ReactiveRecord<K extends keyof any, V> = Record<K, V> & SignalBindin
  * myRecord.a = 42; // Logs: 'Key "a" changed!'
  * unsubscribe();
  */
-export const reactiveRecord = <K extends keyof any, V>(x: Record<K, V>): ReactiveRecord<K, V> => {
+export const reactiveRecord = <T extends Record<any, any>>(x: T): ReactiveRecord<T> => {
   const subs = pubsub()
   return new Proxy(Object.assign(subs.bind(), x), {
     get: (target, key, receiver) => Reflect.get(target, key, receiver),
     set: (target, key, value, receiver) => {
       const result = Reflect.set(target, key, value, receiver)
-      subs.publish(key as K)
+      subs.publish(key as keyof T)
       return result
     },
   })
