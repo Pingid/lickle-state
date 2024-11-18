@@ -1,0 +1,37 @@
+name: Publish package
+
+on:
+  workflow_run:
+    workflows: ['Create release']
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish_npm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          registry-url: 'https://registry.npmjs.org'
+      - name: install dependencies
+        run: bun install
+      - name: transpile typescript
+        run: bun run build
+      - name: Get current version
+        id: current_version
+        run: echo "version=$(node -e 'console.log(require(`./package.json`).version)')" >> $GITHUB_OUTPUT
+      - name: Get latest version
+        id: latest_version
+        run: echo "version=$(npm dist-tag ls | cut -d ' ' -f 2 | xargs echo)" >> $GITHUB_OUTPUT
+      - name: Publish package
+        if: ${{ steps.current_version.outputs.version != steps.latest_version.outputs.version }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public --provenance
