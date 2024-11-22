@@ -19,7 +19,7 @@ export type ReactiveMap<K extends keyof any, V> = Map<K, V> & SignalBinding<K>
  */
 export const reactiveMap = <K extends keyof any, V>(x: Map<K, V>): ReactiveMap<K, V> => {
   const subs = pubsub()
-  return Object.assign(x, {
+  const self: ReactiveMap<K, V> = Object.assign(x, {
     ...subs.bind(),
     set: (key: K, value: V) => {
       Map.prototype.set.call(x, key, value)
@@ -36,4 +36,5 @@ export const reactiveMap = <K extends keyof any, V>(x: Map<K, V>): ReactiveMap<K
       return result
     },
   })
+  return self
 }
