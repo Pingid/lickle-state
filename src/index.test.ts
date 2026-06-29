@@ -365,4 +365,23 @@ describe('onMount', () => {
     a.set(1)
     expect(fn).toHaveBeenCalledTimes(1)
   })
+
+  test('callback may subscribe to the atom without infinite recursion', () => {
+    const a = S.atom(0)
+    const mount = vi.fn(() => a.sub(() => {}))
+    S.onMount(a, mount)
+    const unsub = a.sub(() => {})
+    expect(mount).toHaveBeenCalledTimes(1)
+    unsub()
+  })
+
+  test('cleanup unsubscribes the listener opened during mount', () => {
+    const a = S.atom(0)
+    const internal = vi.fn()
+    S.onMount(a, () => a.sub(internal))
+    const unsub = a.sub(() => {})
+    unsub() // last external subscriber leaves -> mount cleanup unsubscribes internal
+    a.set(1)
+    expect(internal).not.toHaveBeenCalled()
+  })
 })

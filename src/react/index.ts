@@ -23,7 +23,7 @@
  */
 
 import { useCallback, useMemo, useRef, useSyncExternalStore } from 'react'
-import type { Reactive, Readable, ReadableAtom } from './index.ts'
+import type { Reactive, Readable, ReadableAtom } from '../reactive/index.ts'
 
 /**
  * Subscribe a component to a {@link ReadableAtom}, re-rendering only when the

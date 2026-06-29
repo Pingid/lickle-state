@@ -9,4 +9,4 @@ package-lock.json
 yarn.lock
 bun.lock
 docs/dist
-bench/core/snapshots
+*.tsbuildinfo
