@@ -82,7 +82,11 @@ describe('derive', () => {
 
   test('skips notification when eq returns true', () => {
     const a = S.atom({ x: 1 })
-    const d = S.derive([a], (v) => v.x, (prev, next) => prev === next)
+    const d = S.derive(
+      [a],
+      (v) => v.x,
+      (prev, next) => prev === next,
+    )
     const fn = vi.fn()
     d.sub(fn)
     a.set({ x: 1 })
@@ -120,7 +124,10 @@ describe('derive', () => {
   test('get without subscribers always recomputes fresh', () => {
     let calls = 0
     const a = S.atom(0)
-    const d = S.derive([a], (n) => { calls++; return n })
+    const d = S.derive([a], (n) => {
+      calls++
+      return n
+    })
     d.get()
     d.get()
     expect(calls).toBe(2)
@@ -129,7 +136,10 @@ describe('derive', () => {
   test('get with subscribers returns cached value', () => {
     let calls = 0
     const a = S.atom(0)
-    const d = S.derive([a], (n) => { calls++; return n })
+    const d = S.derive([a], (n) => {
+      calls++
+      return n
+    })
     const unsub = d.sub(() => {})
     d.get()
     d.get()
@@ -181,7 +191,11 @@ describe('select', () => {
 
   test('custom eq suppresses notifications on deep-equal values', () => {
     const a = S.atom([1, 2, 3])
-    const s = S.select(a, (v) => [...v], (x, y) => JSON.stringify(x) === JSON.stringify(y))
+    const s = S.select(
+      a,
+      (v) => [...v],
+      (x, y) => JSON.stringify(x) === JSON.stringify(y),
+    )
     const fn = vi.fn()
     s.sub(fn)
     a.set([1, 2, 3])
@@ -246,7 +260,7 @@ describe('batch', () => {
 
   test('batch.microtask applies microtask batching', async () => {
     const a = S.atom(0)
-    S.batch.microtask(a)
+    S.batch(a)
     const fn = vi.fn()
     a.sub(fn)
     a.set(1)
@@ -352,4 +366,3 @@ describe('onMount', () => {
     expect(fn).toHaveBeenCalledTimes(1)
   })
 })
-

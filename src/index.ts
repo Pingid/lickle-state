@@ -359,37 +359,50 @@ const applyBatch = <A extends Reactive>(r: A, scheduler: Scheduler): A => {
  *
  * @group Batching
  */
-export const batch = Object.assign(
-  <A extends Reactive>(r: A, scheduler: Scheduler = _microtaskScheduler): A => applyBatch(r, scheduler),
+export const batch: Batch = Object.assign(
+  (r: Reactive, scheduler: Scheduler = _microtaskScheduler): Reactive => applyBatch(r, scheduler),
   {
-    /**
-     * Apply timeout-based batching to `r`, flushing after `ms` milliseconds.
-     *
-     * @example
-     * ```ts
-     * batch.timeout(16, a) // flush ~once per frame
-     * ```
-     *
-     * @group Batching
-     */
-    timeout: <A extends Reactive>(ms: number, r: A): A =>
+    timeout: (ms: number, r: Reactive): Reactive =>
       applyBatch(r, (cb) => {
         const id = setTimeout(cb, ms)
         return () => clearTimeout(id)
       }),
-    /**
-     * Apply microtask-based batching to `r` (the default strategy).
-     *
-     * @example
-     * ```ts
-     * batch.microtask(a)
-     * ```
-     *
-     * @group Batching
-     */
-    microtask: <A extends Reactive>(r: A): A => applyBatch(r, _microtaskScheduler),
   },
 )
+
+export interface Batch {
+  /**
+   * Wrap a reactive atom so that subscriber notifications are deferred through
+   * `scheduler`. Multiple rapid `set` calls coalesce into a single notification.
+   * Mutates and returns `r`. Defaults to microtask scheduling.
+   *
+   * `batch.microtask(r)` and `batch.timeout(ms, r)` are convenience shorthands.
+   *
+   * @example
+   * ```ts
+   * const a = atom(0)
+   * batch(a)
+   * a.sub(() => console.log(a.get()))
+   * a.set(1)
+   * a.set(2)
+   * // callback fires once (value: 2) after the current microtask
+   * ```
+   *
+   * @group Batching
+   */
+  (r: Reactive, scheduler?: Scheduler): Reactive
+  /**
+   * Apply timeout-based batching to `r`, flushing after `ms` milliseconds.
+   *
+   * @example
+   * ```ts
+   * batch.timeout(16, a) // flush ~once per frame
+   * ```
+   *
+   * @group Batching
+   */
+  timeout: (ms: number, r: Reactive) => Reactive
+}
 
 // ---------------- Util types ----------------
 
