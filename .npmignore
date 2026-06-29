@@ -1,5 +1,2 @@
 .github
 .gitignore
-bun.lockb
-tsconfig.cjs.json
-tsconfig.esm.json

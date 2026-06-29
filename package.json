@@ -1,34 +1,66 @@
 {
   "name": "@lickle/state",
-  "description": "Library of reactive state primities",
-  "version": "0.0.0-dev.3",
+  "version": "0.0.0-dev.4",
+  "description": "A tiny, type-safe reactive state library",
   "author": "Dan Beaven <dm.beaven@gmail.com>",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Pingid/lickle-state"
+    "url": "git+https://github.com/Pingid/lickle-state.git"
   },
   "license": "MIT",
   "type": "module",
-  "main": "lib/cjs/index.js",
-  "types": "lib/ts/index.d.ts",
-  "module": "lib/esm/index.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "module": "dist/index.js",
+  "sideEffects": false,
   "exports": {
+    "./package.json": "./package.json",
     ".": {
-      "types": "./lib/ts/index.d.ts",
-      "import": "./lib/esm/index.js",
-      "require": "./lib/cjs/index.js"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js"
     }
   },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "package.json",
+    "!**/*.test.*",
+    "tsconfig.json"
+  ],
+  "keywords": [
+    "atom",
+    "reactive",
+    "state",
+    "store",
+    "signal",
+    "derived",
+    "effect",
+    "typescript",
+    "react"
+  ],
   "scripts": {
-    "build": "npm run esm && npm run cjs",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
-    "esm": "tsc -p ./tsconfig.esm.json",
-    "cjs": "tsc -p ./tsconfig.cjs.json"
+    "test": "vitest",
+    "docs:build": "pnpm ldocs build"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0"
   },
   "devDependencies": {
-    "prettier": "^3.3.3",
-    "typescript": "^5.6.3",
-    "vitest": "^2.1.5"
+    "@lickle/docs": "0.0.0-dev.20",
+    "@types/react": "18.3.1",
+    "jsr": "^0.14.3",
+    "prettier": "^3.8.3",
+    "react": "^18.0.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.7"
   },
   "prettier": {
     "semi": false,
