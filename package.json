@@ -1,6 +1,6 @@
 {
   "name": "@lickle/state",
-  "version": "0.0.0-dev.8",
+  "version": "0.0.0-dev.9",
   "description": "A tiny, type-safe reactive state library",
   "author": "Dan Beaven <dm.beaven@gmail.com>",
   "repository": {
@@ -19,6 +19,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./atom": {
+      "types": "./dist/atom/index.d.ts",
+      "import": "./dist/atom/index.js"
+    },
     "./react": {
       "types": "./dist/react/index.d.ts",
       "import": "./dist/react/index.js"
@@ -26,6 +30,10 @@
     "./storage": {
       "types": "./dist/storage/index.d.ts",
       "import": "./dist/storage/index.js"
+    },
+    "./signal": {
+      "types": "./dist/signal/index.d.ts",
+      "import": "./dist/signal/index.js"
     }
   },
   "files": [
@@ -60,6 +68,7 @@
   "devDependencies": {
     "@lickle/docs": "0.0.0-dev.20",
     "@types/react": "18.3.1",
+    "fake-indexeddb": "^6.2.5",
     "jsr": "^0.14.3",
     "prettier": "^3.8.3",
     "react": "^18.0.0",

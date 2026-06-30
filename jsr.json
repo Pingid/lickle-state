@@ -1,10 +1,12 @@
 {
   "name": "@lickle/state",
-  "version": "0.0.0-dev.8",
+  "version": "0.0.0-dev.9",
   "license": "MIT",
   "exports": {
     ".": "./src/index.ts",
+    "./atom": "./src/atom/index.ts",
     "./react": "./src/react/index.ts",
-    "./storage": "./src/storage/index.ts"
+    "./storage": "./src/storage/index.ts",
+    "./signal": "./src/signal/index.ts"
   }
 }

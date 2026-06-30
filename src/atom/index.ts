@@ -9,7 +9,7 @@
  *
  * @example
  * ```ts
- * import { atom, derive, effect } from '@lickle/state'
+ * import { atom, derive, effect } from '@lickle/state/atom'
  *
  * const count = atom(0)
  * const doubled = derive([count], (n) => n * 2)
@@ -23,7 +23,7 @@
  * @example
  * React integration:
  * ```tsx
- * import { atom } from '@lickle/state'
+ * import { atom } from '@lickle/state/atom'
  * import { useStore } from '@lickle/state/react'
  *
  * const count = atom(0)
@@ -35,48 +35,24 @@
  * ```
  */
 
-/**
- * A source that can be read with optional extra arguments.
- *
- * @group Types
- */
-export type Readable<T, A extends any[] = []> = { get: (...args: A) => T }
-
-/**
- * A sink that can be written.
- *
- * @group Types
- */
-export type Writable<A extends any[] = []> = { set: (...args: A) => void }
-
-/**
- * A reactive source: tracks subscriber count (`lc`) and allows subscription
- * via `sub`.
- *
- * @group Types
- */
-export type Reactive<A extends any[] = [callback: () => void]> = { lc: number; sub: (...args: A) => () => void }
+import type { AsyncStorage, SyncStorage } from '../storage/index.ts'
+import type { Reactive, Readable, Writable } from '../primitives.ts'
 
 /**
  * A readable, reactive atom — can be read and subscribed to.
  *
  * @group Types
  */
-export type ReadableAtom<T> = Readable<T> & Reactive<[callback: () => void]>
-
-/**
- * A writable atom — can only be written (no read or subscribe).
- *
- * @group Types
- */
-export type WritableAtom<T> = Writable<[value: T]>
+export interface ReadableAtom<T> extends Readable<T>, Reactive<[callback: () => void]> {}
 
 /**
  * A fully reactive atom: readable, writable, and subscribable.
  *
  * @group Types
  */
-export type Atom<T> = ReadableAtom<T> & WritableAtom<T>
+export interface Atom<T> extends ReadableAtom<T>, Writable<[value: T]> {
+  lc: number
+}
 
 // ---- atoms ----
 
@@ -160,7 +136,7 @@ export const derive = <R, const A extends ReadableAtom<any>[]>(
     listeners.forEach((l) => l())
   }
 
-  const $derived: ReadableAtom<R> = {
+  const $derived = {
     lc: 0,
     get: () => {
       if ($derived.lc === 0 || !cached) cached = { value: recompute() }
@@ -218,7 +194,7 @@ export const select = <A, B>(
     listeners.forEach((l) => l())
   }
 
-  const $select: ReadableAtom<B> = {
+  const $select = {
     lc: 0,
     get: () => {
       if ($select.lc === 0 || !cached) cached = { value: selector(src.get()) }
@@ -423,3 +399,58 @@ export interface Batch {
 
 /** Extract the value type `T` from a `Readable<T>`. */
 type InferRead<T> = T extends Readable<infer U> ? U : never
+
+/**
+ * Connect a writable atom to a storage backend: hydrate from `storage[key]` on
+ * init, then write the value back on every `set`. Mutates and returns `$atom`.
+ *
+ * Persistence is always active — it wraps `set` rather than subscribing, so it
+ * neither inflates the atom's subscriber count (`lc`) nor depends on anyone
+ * observing the atom. Works with both {@link SyncStorage} and
+ * {@link AsyncStorage}: sync backends hydrate immediately, async backends
+ * hydrate once their `get` promise resolves. Build a backend with `storage()`
+ * (or the lower-level constructors) from `@lickle/state/storage`.
+ *
+ * @example
+ * ```ts
+ * import { atom, persist } from '@lickle/state/atom'
+ * import { storage } from '@lickle/state/storage'
+ *
+ * const count = persist('count', atom(0), storage('local'))
+ * count.set(5) // value persisted
+ * // on reload, persist('count', atom(0), storage('local')) hydrates back to 5
+ * ```
+ *
+ * @group Storage
+ */
+export function persist<K extends string, T>(
+  key: K,
+  $atom: Atom<T>,
+  storage: SyncStorage<Record<K, T>> | AsyncStorage<Record<K, T>>,
+): Atom<T>
+export function persist<T>(
+  key: string,
+  $atom: Atom<T>,
+  storage: SyncStorage<Record<string, T>> | AsyncStorage<Record<string, T>>,
+): Atom<T>
+export function persist(key: string, $atom: Atom<any>, storage: SyncStorage<any> | AsyncStorage<any>): Atom<any> {
+  const origSet = $atom.set
+
+  // Write-through: every set also persists.
+  $atom.set = (value) => {
+    origSet(value)
+    storage.set(key, value) // async backends: fire-and-forget
+  }
+
+  // Hydrate via origSet so we don't immediately re-persist what we just read.
+  if (storage.kind === 'sync') {
+    const v = storage.get(key)
+    if (v != null) origSet(v)
+  } else {
+    storage.get(key).then((v) => {
+      if (v != null) origSet(v)
+    })
+  }
+
+  return $atom
+}

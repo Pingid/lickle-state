@@ -1,5 +1,5 @@
 import { test, expect, describe, vi } from 'vitest'
-import * as S from './index.js'
+import * as S from './index.ts'
 
 describe('atom', () => {
   test('get returns the initial value', () => {

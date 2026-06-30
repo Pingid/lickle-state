@@ -23,7 +23,8 @@
  */
 
 import { useCallback, useMemo, useRef, useSyncExternalStore } from 'react'
-import type { Reactive, Readable, ReadableAtom } from '../reactive/index.ts'
+import { effect, untrack } from '../signal/index.ts'
+import type { ReadableAtom } from '../atom/index.ts'
 
 /**
  * Subscribe a component to a {@link ReadableAtom}, re-rendering only when the
@@ -80,25 +81,40 @@ const DEFAULT_EQ = (a: any, b: any) => a === b
 const DEFAULT_SELECTOR = (value: any) => value
 
 /**
- * Subscribe a component to a parameterised reactive source — one whose `get`
- * and `sub` accept extra arguments (e.g. a key into a reactive map).
- *
- * Re-renders whenever the source notifies. The atom reference and each
- * argument are treated as dependencies; changing any of them resubscribes.
+ * Subscribe a component to a signal {@link Getter}, re-rendering when any signal
+ * the getter reads changes. Dependencies are auto-tracked, so a derived getter
+ * like `() => a() + b()` works without listing its sources.
  *
  * @example
  * ```tsx
- * // reactive map where get(key) / sub(key, cb) take a key argument
- * const name = useReadable(usersMap, userId)
+ * import { signal, memo } from '@lickle/state/signal'
+ * import { useSignal } from '@lickle/state/react'
+ *
+ * const [count, setCount] = signal(0)
+ * const doubled = memo(() => count() * 2)
+ *
+ * function Counter() {
+ *   const n = useSignal(doubled)
+ *   return <button onClick={() => setCount((x) => x + 1)}>{n}</button>
+ * }
  * ```
  *
  * @group Hooks
  */
-export const useReadable = <A extends any[], R>(
-  atom: Readable<R, A> & Reactive<[...A, callback: () => void]>,
-  ...args: A
-): R => {
-  const get = useCallback(() => atom.get(...args), [atom, ...args])
-  const sub = useCallback((callback: () => void) => atom.sub(...args, callback), [atom, ...args])
-  return useSyncExternalStore(sub, get, get)
+export const useSignal = <T>(get: () => T): T => {
+  const ref = useRef(get)
+  ref.current = get
+  const value = useRef<T>(undefined as T)
+
+  const subscribe = useCallback(
+    (onChange: () => void) =>
+      effect(() => {
+        value.current = ref.current()
+        onChange()
+      }),
+    [],
+  )
+  const snapshot = useCallback(() => value.current, [])
+
+  return useSyncExternalStore(subscribe, snapshot, () => untrack(ref.current))
 }
