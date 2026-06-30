@@ -1,6 +1,6 @@
 {
   "name": "@lickle/state",
-  "version": "0.0.0-dev.9",
+  "version": "0.0.0-dev.12",
   "description": "A tiny, type-safe reactive state library",
   "author": "Dan Beaven <dm.beaven@gmail.com>",
   "repository": {

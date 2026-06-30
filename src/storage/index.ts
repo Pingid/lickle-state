@@ -26,6 +26,7 @@
 import type { AsyncNullMap, KeyReadable, KeyWritable, NullMap, TypeMap } from '../primitives.ts'
 
 /**
+ * Read side of a storage backend: `get` returns the stored value or `null`.
  *
  * @group Types
  */
@@ -48,9 +49,15 @@ export interface StorageWritable<T extends TypeMap = TypeMap> extends KeyWritabl
  */
 export interface SyncStorage<T extends TypeMap = TypeMap> extends StorageReadable<T>, StorageWritable<T> {
   kind: 'sync'
+  /** All keys currently in the store. */
+  keys: Iterable<keyof T>
+  /** All key/value pairs currently in the store. */
+  entries: Iterable<{ [K in keyof T]: [K, T[K]] }[keyof T]>
 }
 
 /**
+ * Async read side of a storage backend: `get` resolves to the value or `null`.
+ *
  * @group Types
  */
 export interface AsyncStorageReadable<T extends TypeMap = TypeMap> extends KeyReadable<AsyncNullMap<T>> {
@@ -58,6 +65,8 @@ export interface AsyncStorageReadable<T extends TypeMap = TypeMap> extends KeyRe
 }
 
 /**
+ * Async write side of a storage backend: `set` and `delete` return promises.
+ *
  * @group Types
  */
 export interface AsyncStorageWritable<T extends TypeMap = TypeMap> extends KeyWritable<T, Promise<void>> {
@@ -115,32 +124,41 @@ type SyncStorageOptions<T extends TypeMap = TypeMap> = {
  * storage(memory())
  * ```
  *
- * @group Storage
  */
+/** Pass an existing {@link SyncStorage} through unchanged. */
+export function storage<T extends TypeMap>(store: SyncStorage<T>): SyncStorage<T>
+/** Build a JSON-serialized {@link SyncStorage} backed by `localStorage`; falls back to {@link memory} when unavailable. */
 export function storage<T extends TypeMap>(backing: 'local', opts?: SyncStorageOptions<T>): SyncStorage<T>
+/** Build a JSON-serialized {@link SyncStorage} backed by `sessionStorage`; falls back to {@link memory} when unavailable. */
 export function storage<T extends TypeMap>(backing: 'session', opts?: SyncStorageOptions<T>): SyncStorage<T>
+/** Build an {@link IndexedDBStorage} backed by IndexedDB. */
 export function storage<T extends TypeMap>(backing: 'indexedDB', opts?: SyncStorageOptions<T>): IndexedDBStorage<T>
+/** `localStorage` variant with explicit key union `K` and value type `V`. */
 export function storage<K extends string, T>(
   backing: 'local',
   opts?: SyncStorageOptions<Record<K, T>>,
 ): SyncStorage<Record<K, T>>
+/** `sessionStorage` variant with explicit key union `K` and value type `V`. */
 export function storage<K extends string, T>(
   backing: 'session',
   opts?: SyncStorageOptions<Record<K, T>>,
 ): SyncStorage<Record<K, T>>
+/** IndexedDB variant with explicit key union `K` and value type `V`. */
 export function storage<K extends string, T>(
   backing: 'indexedDB',
   opts?: SyncStorageOptions<Record<K, T>>,
 ): IndexedDBStorage<Record<K, T>>
-export function storage<T extends AnyStorage>(store: T): T
+/** `localStorage` variant typed as `Record<string, T>`. */
 export function storage<T>(
   backing: 'local',
   opts?: SyncStorageOptions<Record<string, T>>,
 ): SyncStorage<Record<string, T>>
+/** `sessionStorage` variant typed as `Record<string, T>`. */
 export function storage<T>(
   backing: 'session',
   opts?: SyncStorageOptions<Record<string, T>>,
 ): SyncStorage<Record<string, T>>
+/** IndexedDB variant typed as `Record<string, T>`. */
 export function storage<T>(
   backing: 'indexedDB',
   opts?: SyncStorageOptions<Record<string, T>>,
@@ -170,13 +188,16 @@ export function storage<T>(
  * ns.set('count', '1') // writes key 'app:count'
  * ```
  *
- * @group Storage
  */
+/** Curried form: returns a function that applies the prefix to a storage. */
 export function prefix<T extends TypeMap = TypeMap>(prefix: string): (storage: SyncStorage<T>) => SyncStorage<T>
+/** Data-first form: applies the prefix to `storage` immediately. */
 export function prefix<T extends TypeMap = TypeMap>(storage: SyncStorage<T>, prefix: string): SyncStorage<T>
+/** Curried form with explicit key union `K` and value type `V`. */
 export function prefix<K extends string, V>(
   prefix: string,
 ): (storage: SyncStorage<Record<K, V>>) => SyncStorage<Record<K, V>>
+/** Data-first form with explicit key union `K` and value type `V`. */
 export function prefix<K extends string, V>(
   storage: SyncStorage<Record<K, V>>,
   prefix: string,
@@ -196,6 +217,22 @@ export function prefix(a: string | SyncStorage<Record<string, any>>, b?: string)
       delete(key) {
         storage.delete(p + (key as string))
       },
+      get keys(): Iterable<string> {
+        const src = storage.keys
+        return (function* () {
+          for (const k of src) {
+            if ((k as string).startsWith(p)) yield (k as string).slice(p.length)
+          }
+        })()
+      },
+      get entries(): Iterable<[string, any]> {
+        const src = storage.entries
+        return (function* () {
+          for (const [k, v] of src) {
+            if ((k as string).startsWith(p)) yield [(k as string).slice(p.length), v] as [string, any]
+          }
+        })()
+      },
     })
 
   return typeof a === 'string' ? apply(a) : apply(b as string)(a)
@@ -206,9 +243,7 @@ export function prefix(a: string | SyncStorage<Record<string, any>>, b?: string)
  *
  * @group Types
  */
-export interface MemoryStorage<T extends TypeMap = TypeMap> extends SyncStorage<T> {
-  store: Map<keyof T, T[keyof T]>
-}
+export type MemoryStorage<T extends TypeMap = TypeMap> = SyncStorage<T>
 
 /**
  * In-memory {@link SyncStorage}. Values are held in a `Map`, so anything is
@@ -222,23 +257,26 @@ export interface MemoryStorage<T extends TypeMap = TypeMap> extends SyncStorage<
  * store.get('count') // 1
  * ```
  *
- * @group Storage
  */
-export function memory<K extends string, V>(): MemoryStorage<Record<K, V>>
-export function memory<T extends TypeMap>(): MemoryStorage<T>
-export function memory(): MemoryStorage<Record<string, any>> {
-  const map = new Map<string, any>()
+/** Type parameters as explicit key union `K` and value type `V`. */
+export function memory<K extends string, V>(store?: Map<string, any>): SyncStorage<Record<K, V>>
+/** Type parameter as a full {@link TypeMap}. */
+export function memory<T extends TypeMap>(store?: Map<string, any>): SyncStorage<T>
+export function memory(store: Map<string, any> = new Map<string, any>()): SyncStorage<Record<string, any>> {
   return {
-    store: map,
     kind: 'sync',
-    get: (key) => {
-      return map.get(key) as any
-    },
+    get: (key) => store.get(key) as any,
     set(key, value) {
-      map.set(key, value)
+      store.set(key, value)
     },
     delete(key) {
-      map.delete(key)
+      store.delete(key)
+    },
+    get keys() {
+      return store.keys()
+    },
+    get entries() {
+      return store.entries()
     },
   }
 }
@@ -247,9 +285,10 @@ export function memory(): MemoryStorage<Record<string, any>> {
  * String-valued {@link SyncStorage} backed by `sessionStorage`. Falls back to
  * {@link memory} when `sessionStorage` is unavailable.
  *
- * @group Storage
  */
+/** Type parameters as explicit key union `K` and value type `V`. */
 export function session<K extends string, V>(): SyncStorage<Record<K, V>>
+/** Type parameter as a full {@link TypeMap}; defaults to `Record<string, string>`. */
 export function session<T extends TypeMap = Record<string, string>>(): SyncStorage<T>
 
 export function session(): SyncStorage<Record<string, string>> {
@@ -261,9 +300,10 @@ export function session(): SyncStorage<Record<string, string>> {
  * String-valued {@link SyncStorage} backed by `localStorage`. Falls back to
  * {@link memory} when `localStorage` is unavailable.
  *
- * @group Storage
  */
+/** Type parameters as explicit key union `K` and value type `V`. */
 export function local<K extends string, V>(): SyncStorage<Record<K, V>>
+/** Type parameter as a full {@link TypeMap}. */
 export function local<T extends TypeMap>(): SyncStorage<T>
 export function local(): SyncStorage<Record<string, string>> {
   if (typeof window === 'undefined' || !('localStorage' in window)) return memory<any>()
@@ -280,7 +320,6 @@ export function local(): SyncStorage<Record<string, string>> {
  * const store = fromWeb(window.localStorage)
  * ```
  *
- * @group Storage
  */
 export function fromWeb(storage: Storage): SyncStorage<Record<string, string>> {
   return {
@@ -293,6 +332,12 @@ export function fromWeb(storage: Storage): SyncStorage<Record<string, string>> {
     },
     delete(key) {
       storage.removeItem(key as string)
+    },
+    get keys() {
+      return Object.keys(storage)
+    },
+    get entries(): Iterable<[string, string]> {
+      return Object.keys(storage).map((k) => [k, storage.getItem(k) as string] as [string, string])
     },
   }
 }
@@ -309,9 +354,10 @@ export function fromWeb(storage: Storage): SyncStorage<Record<string, string>> {
  * await store.get('token') // 'abc'
  * ```
  *
- * @group Storage
  */
+/** Lift a {@link SyncStorage} to the {@link AsyncStorage} interface, wrapping each result in a resolved promise. */
 export function toAsync<T extends TypeMap = TypeMap>(storage: SyncStorage<T>): AsyncStorage<T>
+/** Pass-through overload for stores already typed as `AsyncStorage<Record<K, V>>`. */
 export function toAsync<K extends string, V>(storage: AsyncStorage<Record<K, V>>): AsyncStorage<Record<K, V>>
 export function toAsync(storage: AnyStorage): AsyncStorage<any> {
   return {
@@ -341,25 +387,28 @@ export function toAsync(storage: AnyStorage): AsyncStorage<any> {
  * store.get('user') // { name: 'Alice' }
  * ```
  *
- * @group Storage
  */
+/** Data-first form; type parameter as a full {@link TypeMap}. */
 export function serialized<T extends TypeMap = TypeMap>(
   storage: SyncStorage<Record<string, string>>,
   serializer?: (value: T[keyof T]) => string,
   deserializer?: (value: string, key: keyof T) => T[keyof T],
 ): SyncStorage<T>
 
+/** Curried form; type parameter as a full {@link TypeMap}. */
 export function serialized<T extends TypeMap = TypeMap>(
   serializer?: (value: T[keyof T]) => string,
   deserializer?: (value: string, key: keyof T) => T[keyof T],
 ): (storage: SyncStorage<Record<string, string>>) => SyncStorage<T>
 
+/** Data-first form with explicit key union `K` and value type `V`. */
 export function serialized<K extends string, V>(
   storage: SyncStorage<Record<string, string>>,
   serializer?: (value: V) => string,
   deserializer?: (value: string) => V,
 ): SyncStorage<Record<K, V>>
 
+/** Curried form with explicit key union `K` and value type `V`. */
 export function serialized<K extends string, V>(
   serializer?: (value: V) => string,
   deserializer?: (value: string) => V,
@@ -380,6 +429,15 @@ export function serialized(a: any, b?: any, c?: any) {
       },
       delete(key) {
         store.delete(key as string)
+      },
+      get keys() {
+        return store.keys
+      },
+      get entries(): Iterable<[string, any]> {
+        const src = store.entries
+        return (function* () {
+          for (const [k, v] of src) yield [k as string, deserializer(v as string, k)] as [string, any]
+        })()
       },
     })
 
@@ -427,25 +485,27 @@ export interface IndexedDBStorage<T extends TypeMap = TypeMap> extends AsyncStor
  * await store.destroy()    // delete the whole database
  * ```
  *
- * @group Storage
  */
+/** Type parameters as explicit key union `K` and value type `V`; both arguments are optional. */
 export function indexedDB<K extends string, V>(name?: string, storeName?: string): IndexedDBStorage<Record<K, V>>
+/** Type parameter as a full {@link TypeMap}; `name` and `storeName` are required. */
 export function indexedDB<T extends TypeMap = TypeMap>(name: string, storeName: string): IndexedDBStorage<T>
 export function indexedDB(
   name: string = 'lickle-state',
   storeName: string = 'keyval',
 ): IndexedDBStorage<Record<string, any>> {
   if (typeof globalThis === 'undefined' || !('indexedDB' in globalThis)) {
-    const mem = memory<any>()
+    const store = new Map<string, any>()
+    const mem = memory<any>(store)
     return {
       ...toAsync(mem),
       name,
       storeName,
-      clear: () => (mem.store.clear(), Promise.resolve()),
-      recreate: () => (mem.store.clear(), Promise.resolve()),
-      destroy: () => (mem.store.clear(), Promise.resolve()),
-      keys: () => Promise.resolve([...mem.store.keys()] as any),
-      entries: () => Promise.resolve([...mem.store.entries()] as [any, any][]),
+      clear: () => (store.clear(), Promise.resolve()),
+      recreate: () => (store.clear(), Promise.resolve()),
+      destroy: () => (store.clear(), Promise.resolve()),
+      keys: () => Promise.resolve([...store.keys()] as any),
+      entries: () => Promise.resolve([...store.entries()] as [any, any][]),
     }
   }
 
@@ -456,6 +516,7 @@ export function indexedDB(
       req.onupgradeneeded = () => req.result.createObjectStore(storeName)
       req.onsuccess = () => resolve(req.result)
       req.onerror = () => reject(req.error)
+      req.onblocked = () => reject(new Error(`IndexedDB open blocked: ${name}`))
     }))
 
   const run = <R>(mode: IDBTransactionMode, fn: (store: IDBObjectStore) => IDBRequest<R>): Promise<R> =>
@@ -483,6 +544,7 @@ export function indexedDB(
           }
           req.onsuccess = () => resolve(req.result)
           req.onerror = () => reject(req.error)
+          req.onblocked = () => reject(new Error(`IndexedDB version-change blocked: ${name}`))
         }),
     )
     dbPromise = p // concurrent ops await the rebuilt connection
@@ -502,7 +564,6 @@ export function indexedDB(
         }),
     )
 
-  // getAllKeys() and getAll() share an ascending-key order, so zip by index.
   const entries = () =>
     db().then(
       (database) =>
@@ -510,7 +571,13 @@ export function indexedDB(
           const s = database.transaction(storeName, 'readonly').objectStore(storeName)
           const ks = s.getAllKeys()
           const vs = s.getAll()
-          s.transaction.oncomplete = () => resolve(ks.result.map((k, i) => [k, vs.result[i]]))
+          s.transaction.oncomplete = () => {
+            // sanity guard — a concurrent write in another tab can still
+            // produce a torn read between getAllKeys and getAll
+            if (ks.result.length !== vs.result.length)
+              return reject(new Error('IndexedDB entries: key/value count mismatch'))
+            resolve(ks.result.map((k, i) => [k, vs.result[i]]))
+          }
           s.transaction.onerror = () => reject(s.transaction.error)
         }),
     )

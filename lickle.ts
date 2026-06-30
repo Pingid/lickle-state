@@ -8,7 +8,7 @@ export default defineConfig({
       Layout.groupByTag(
         '@group',
         (x) => x,
-        (y) => y + 10,
+        // (y) => y + 20,
       ),
     ),
   ),

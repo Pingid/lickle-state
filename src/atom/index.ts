@@ -36,7 +36,7 @@
  */
 
 import type { AsyncStorage, SyncStorage } from '../storage/index.ts'
-import type { Reactive, Readable, Writable } from '../primitives.ts'
+import type { KeyReadable, KeyWritable, Reactive, Readable, TypeMap, Writable } from '../primitives.ts'
 
 /**
  * A readable, reactive atom — can be read and subscribed to.
@@ -58,7 +58,9 @@ export interface Atom<T> extends ReadableAtom<T>, Writable<[value: T]> {
 
 /**
  * Create a writable reactive atom holding `init` as the initial value.
- * Subscribers are notified synchronously on every `set`.
+ * Subscribers are notified synchronously on every `set`. Equal values (per
+ * `eq`, defaulting to `===`) are swallowed. Pass `() => false` to always
+ * notify, e.g. for atoms holding mutable objects you mutate in place.
  *
  * @example
  * ```ts
@@ -74,7 +76,7 @@ export interface Atom<T> extends ReadableAtom<T>, Writable<[value: T]> {
  *
  * @group Atoms
  */
-export const atom = <T>(init: T): Atom<T> => {
+export const atom = <T>(init: T, eq: (a: T, b: T) => boolean = (a, b) => a === b): Atom<T> => {
   const listeners = new Set<() => void>()
 
   const $atom = {
@@ -83,8 +85,9 @@ export const atom = <T>(init: T): Atom<T> => {
     value: init,
     get: () => $atom.value,
     set: (value: T) => {
+      if (eq(value, $atom.value)) return
       $atom.value = value
-      listeners.forEach((l) => l())
+      for (const l of [...listeners]) l()
     },
     sub: (callback: () => void) => {
       $atom.lc++
@@ -133,7 +136,7 @@ export const derive = <R, const A extends ReadableAtom<any>[]>(
     const next = recompute()
     if (cached && eq(cached.value, next)) return
     cached = { value: next }
-    listeners.forEach((l) => l())
+    for (const l of [...listeners]) l()
   }
 
   const $derived = {
@@ -182,56 +185,23 @@ export const select = <A, B>(
   src: ReadableAtom<A>,
   selector: (value: A) => B,
   eq: (a: B, b: B) => boolean = (a, b) => a === b,
-): ReadableAtom<B> => {
-  const listeners = new Set<() => void>()
-  let cached: { value: B } | null = null
-  let srcUnsub: (() => void) | null = null
-
-  const notify = () => {
-    const next = selector(src.get())
-    if (cached && eq(cached.value, next)) return
-    cached = { value: next }
-    listeners.forEach((l) => l())
-  }
-
-  const $select = {
-    lc: 0,
-    get: () => {
-      if ($select.lc === 0 || !cached) cached = { value: selector(src.get()) }
-      return cached.value
-    },
-    sub: (callback: () => void) => {
-      if ($select.lc === 0) {
-        cached = { value: selector(src.get()) }
-        srcUnsub = src.sub(notify)
-      }
-      $select.lc++
-      listeners.add(callback)
-      return () => {
-        listeners.delete(callback)
-        $select.lc--
-        if ($select.lc === 0) {
-          srcUnsub?.()
-          srcUnsub = null
-          cached = null
-        }
-      }
-    },
-  }
-
-  return $select
-}
+): ReadableAtom<B> => derive([src], selector, eq)
 
 // ---- effects ----
 
 /**
  * Subscribe to a reactive source, running `callback` immediately and again on
- * every subsequent change. Returns an unsubscribe function.
+ * every subsequent change. Returns an unsubscribe function. `callback` may
+ * return a cleanup function that runs before the next invocation and on final
+ * dispose — matching the signal-layer `effect` contract.
  *
  * @example
  * ```ts
  * const count = atom(0)
- * const stop = effect(count, () => console.log(count.get()))
+ * const stop = effect(count, () => {
+ *   const id = setInterval(() => count.set(count.get() + 1), 100)
+ *   return () => clearInterval(id)
+ * })
  * // logs 0 immediately
  * count.set(1) // logs 1
  * stop()
@@ -240,15 +210,80 @@ export const select = <A, B>(
  *
  * @group Effects
  */
-export const effect = <A extends Reactive>(reactive: A, callback: () => void): (() => void) => {
-  callback()
-  return reactive.sub(callback)
+export const effect = <A extends Reactive>(
+  reactive: A,
+  callback: () => (() => void) | void,
+): (() => void) => {
+  let cleanup: (() => void) | void
+  const run = () => {
+    cleanup?.()
+    cleanup = callback()
+  }
+  run()
+  const unsub = reactive.sub(run)
+  return () => {
+    cleanup?.()
+    unsub()
+  }
 }
+
+/**
+ * Subscribe to a reactive source, calling `callback` on every change but
+ * **not** immediately. Returns an unsubscribe function.
+ *
+ * Use {@link effect} when you need the current value right away; use `watch`
+ * when you only care about future changes.
+ *
+ * @example
+ * ```ts
+ * const count = atom(0)
+ * const stop = watch(count, () => console.log('changed:', count.get()))
+ * count.set(1) // logs "changed: 1"
+ * stop()
+ * ```
+ *
+ * @group Effects
+ */
+export const watch = <A extends Reactive>(reactive: A, callback: () => void): (() => void) =>
+  reactive.sub(callback)
+
+/**
+ * Read-modify-write an atom in a single call.
+ *
+ * @example
+ * ```ts
+ * const count = atom(0)
+ * update(count, (n) => n + 1) // count is now 1
+ * ```
+ *
+ * @group Atoms
+ */
+export const update = <T>(a: Atom<T>, fn: (value: T) => T): void => a.set(fn(a.get()))
+
+/**
+ * Wrap an atom to expose only its read surface, hiding `set`. Useful for
+ * handing a derived or internal atom to consumers that should not write it.
+ *
+ * @example
+ * ```ts
+ * const _count = atom(0)
+ * export const count = readonly(_count) // no .set exposed
+ * ```
+ *
+ * @group Atoms
+ */
+export const readonly = <T>(a: ReadableAtom<T>): ReadableAtom<T> => ({
+  get: a.get.bind(a),
+  sub: a.sub.bind(a),
+})
 
 /**
  * Run `callback` the first time the reactive gains a subscriber, calling its
  * return value (cleanup) when the last subscriber leaves. Useful for lazily
  * connecting external resources (timers, WebSockets, etc.).
+ *
+ * When composing with {@link batch}, apply `batch` first:
+ * `onMount(batch(atom), callback)` — not `batch(onMount(atom, callback))`.
  *
  * @example
  * ```ts
@@ -291,6 +326,156 @@ export const onMount = <A extends Reactive<any>>(reactive: A, callback: () => ()
     }
   }
   return reactive
+}
+
+// ---- keyed atoms ----
+
+/**
+ * A reactive record with per-key and global subscriptions.
+ *
+ * @group Types
+ */
+export interface KeyedAtom<T extends TypeMap = TypeMap> extends KeyReadable<T>, KeyWritable<T> {
+  /** Subscribe to a single key; callback receives the new value. */
+  sub<K extends keyof T>(key: K, callback: (value: T[K]) => void): () => void
+  /** Subscribe to any change; callback receives the changed key and new value. */
+  sub(callback: (key: keyof T, value: T[keyof T]) => void): () => void
+  delete<K extends keyof T>(key: K): void
+  lc: number
+}
+
+/**
+ * Create a reactive key/value store. Subscribe per-key or globally; all
+ * notifications use snapshot iteration to tolerate mid-fire subscribe/unsubscribe.
+ *
+ * @example
+ * ```ts
+ * type Session = { userId: string; theme: 'light' | 'dark' }
+ * const session = keyed<Session>()
+ *
+ * const stopTheme = session.sub('theme', (v) => console.log('theme:', v))
+ * const stopAll   = session.sub((key, v) => console.log(key, '→', v))
+ *
+ * session.set('theme', 'dark') // fires both
+ * session.delete('userId')     // fires global with undefined
+ * stopTheme(); stopAll()
+ * ```
+ *
+ * @group Atoms
+ */
+export const keyed = <T extends TypeMap>(init: Partial<T> = {}): KeyedAtom<T> => {
+  const store = new Map<keyof T, T[keyof T]>(Object.entries(init) as [keyof T, T[keyof T]][])
+  const keyListeners = new Map<keyof T, Set<(value: any) => void>>()
+  const globalListeners = new Set<(key: keyof T, value: T[keyof T]) => void>()
+  let lc = 0
+
+  const notify = <K extends keyof T>(key: K, value: T[K]) => {
+    for (const l of [...(keyListeners.get(key) ?? [])]) l(value)
+    for (const l of [...globalListeners]) l(key, value)
+  }
+
+  return {
+    get lc() { return lc },
+    get: <K extends keyof T>(key: K) => store.get(key) as T[K],
+    set: <K extends keyof T>(key: K, value: T[K]) => {
+      if (store.get(key) === value) return
+      store.set(key, value)
+      notify(key, value)
+    },
+    delete: <K extends keyof T>(key: K) => {
+      if (!store.has(key)) return
+      store.delete(key)
+      notify(key, undefined as any)
+    },
+    sub(keyOrCallback: any, maybeCallback?: any) {
+      if (typeof keyOrCallback === 'function') {
+        const cb = keyOrCallback as (key: keyof T, value: T[keyof T]) => void
+        globalListeners.add(cb); lc++
+        return () => { globalListeners.delete(cb); lc-- }
+      }
+      const key = keyOrCallback as keyof T
+      const cb = maybeCallback as (value: any) => void
+      if (!keyListeners.has(key)) keyListeners.set(key, new Set())
+      keyListeners.get(key)!.add(cb); lc++
+      return () => { keyListeners.get(key)?.delete(cb); lc-- }
+    },
+  } as KeyedAtom<T>
+}
+
+// ---- async derived atoms ----
+
+/**
+ * The value type of a {@link deriveAsync} atom: the current loading/error/value
+ * state of an async computation.
+ *
+ * @group Types
+ */
+export interface AsyncResult<T> {
+  loading: boolean
+  error: Error | null
+  value: T | null
+}
+
+/**
+ * Derive a read-only atom from an async function. The result atom holds an
+ * {@link AsyncResult} that updates as the promise settles. Sources are
+ * subscribed lazily (on first `.sub()`). Stale in-flight requests are
+ * discarded when sources change.
+ *
+ * @example
+ * ```ts
+ * const userId = atom('u1')
+ * const profile = deriveAsync([userId], async (id) => fetchUser(id))
+ *
+ * profile.get() // { loading: true, error: null, value: null }
+ *
+ * profile.sub(() => {
+ *   const { loading, error, value } = profile.get()
+ *   if (!loading && !error) render(value)
+ * })
+ * ```
+ *
+ * @group Atoms
+ */
+export const deriveAsync = <R, const A extends ReadableAtom<any>[]>(
+  sources: A,
+  fn: (...args: { [K in keyof A]: InferRead<A[K]> }) => Promise<R>,
+): ReadableAtom<AsyncResult<R>> => {
+  const inner = atom<AsyncResult<R>>({ loading: true, error: null, value: null }, () => false)
+  let version = 0
+  let srcUnsubs: (() => void)[] = []
+
+  const run = () => {
+    const v = ++version
+    inner.set({ ...inner.get(), loading: true, error: null })
+    const args = sources.map((s) => s.get()) as any
+    fn(...args).then(
+      (value) => { if (v === version) inner.set({ loading: false, error: null, value }) },
+      (err) => {
+        if (v === version)
+          inner.set({ loading: false, error: err instanceof Error ? err : new Error(String(err)), value: null })
+      },
+    )
+  }
+
+  const origSub = inner.sub.bind(inner)
+  inner.sub = (callback: () => void) => {
+    if (inner.lc === 0) {
+      srcUnsubs = sources.map((s) => s.sub(run))
+      run()
+    }
+    const unsub = origSub(callback)
+    return () => {
+      unsub()
+      if (inner.lc === 0) {
+        srcUnsubs.forEach((u) => u())
+        srcUnsubs = []
+        version++ // discard any in-flight resolution
+      }
+    }
+  }
+
+  return inner
 }
 
 // ---- batching ----
@@ -336,7 +521,7 @@ const applyBatch = <A extends Reactive>(r: A, scheduler: Scheduler): A => {
  * `scheduler`. Multiple rapid `set` calls coalesce into a single notification.
  * Mutates and returns `r`. Defaults to microtask scheduling.
  *
- * `batch.microtask(r)` and `batch.timeout(ms, r)` are convenience shorthands.
+ * `batch.timeout(ms, r)` is a convenience shorthand for timeout-based scheduling.
  *
  * @example
  * ```ts
@@ -367,7 +552,7 @@ export interface Batch {
    * `scheduler`. Multiple rapid `set` calls coalesce into a single notification.
    * Mutates and returns `r`. Defaults to microtask scheduling.
    *
-   * `batch.microtask(r)` and `batch.timeout(ms, r)` are convenience shorthands.
+   * `batch.timeout(ms, r)` is a convenience shorthand for timeout-based scheduling.
    *
    * @example
    * ```ts
@@ -423,11 +608,13 @@ type InferRead<T> = T extends Readable<infer U> ? U : never
  *
  * @group Storage
  */
+/** Narrow overload: key `K` is constrained to the storage's key union, catching typos at compile time. */
 export function persist<K extends string, T>(
   key: K,
   $atom: Atom<T>,
   storage: SyncStorage<Record<K, T>> | AsyncStorage<Record<K, T>>,
 ): Atom<T>
+/** Permissive overload: accepts any `string` key. */
 export function persist<T>(
   key: string,
   $atom: Atom<T>,
@@ -447,8 +634,9 @@ export function persist(key: string, $atom: Atom<any>, storage: SyncStorage<any>
     const v = storage.get(key)
     if (v != null) origSet(v)
   } else {
+    const snapshot = $atom.get()
     storage.get(key).then((v) => {
-      if (v != null) origSet(v)
+      if (v != null && $atom.get() === snapshot) origSet(v)
     })
   }
 

@@ -1,17 +1,23 @@
+/**
+ * Signal primitives: auto-tracked effects, memoised derivations, and a
+ * batched-flush queue. All logic is parameterised over a {@link Runtime} so
+ * multiple isolated {@link Scope | scopes} can coexist without sharing state.
+ */
+
 import type { Readable, Writable } from '../primitives.ts'
 
 /**
  * Read-side of a {@link Signal}; calling `get` inside an {@link Scope.effect}
  * or {@link Scope.memo} subscribes the caller to changes.
  *
- * @group Signals
+ * @group Types
  */
 export interface ReadableSignal<T> extends Readable<T> {}
 
 /**
  * Write-side of a {@link Signal}. Accepts a value or an updater function.
  *
- * @group Signals
+ * @group Types
  */
 export interface WritableSignal<T> extends Writable<[next: T | ((prev: T) => T)]> {
   set: (next: T | ((prev: T) => T)) => void
@@ -20,7 +26,7 @@ export interface WritableSignal<T> extends Writable<[next: T | ((prev: T) => T)]
 /**
  * A readable + writable reactive value produced by {@link Scope.signal}.
  *
- * @group Signals
+ * @group Types
  */
 export interface Signal<T> extends ReadableSignal<T>, WritableSignal<T> {}
 
@@ -30,7 +36,7 @@ export interface Signal<T> extends ReadableSignal<T>, WritableSignal<T> {}
  * top-level `signal`/`effect`/`memo`/`batch`/`untrack` are the methods of one
  * root scope created at import time.
  *
- * @group Signals
+ * @group Types
  */
 export interface Scope {
   /** Create a reactive value on this scope. */
@@ -56,7 +62,6 @@ export interface Scope {
 /**
  * Create an isolated reactive scope: its own dependency graph and batch queue.
  *
- * @group Signals
  */
 export const createScope = (): Scope => {
   const ctx: Runtime = { o: null, depth: 0, flushing: false, queued: new Set() }

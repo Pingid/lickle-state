@@ -59,6 +59,7 @@ export const useStore = <A, B = A>(
   fns.current = { selector, eq }
 
   const { sub, get } = useMemo(() => {
+    value.current = null  // new atom → drop stale snapshot
     const compute = () => fns.current.selector(atom.get())
     const get = () => {
       if (value.current === null) value.current = { v: compute() }
